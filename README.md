@@ -1,4 +1,4 @@
-# AzureIotHubMqttBase
+# Azure Iot Hub Mqtt Base
 This example shows how to connect a NetBurner device to Azure's IoT Hub service with MQTT.
 
 For a full explanation on how to use this repo and for a step by step guide to get up and running, please see our article, [How to Connect Your Embedded System to Azure IoT Hub with MQTT](https://www.netburner.com/uncategorized/connect-your-embedded-system-to-azure-iot-hub-with-mqtt/), found on NetBurner's website at www.netburner.com.
