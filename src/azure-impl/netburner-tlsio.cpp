@@ -140,7 +140,7 @@ void tlsioNetburnerDestroy(CONCRETE_IO_HANDLE concreteIo)
     case TLSIO_NETBURNER_STATE_OPENING:
     case TLSIO_NETBURNER_STATE_OPEN:
     case TLSIO_NETBURNER_STATE_CLOSING:
-        iprintf("TLS destroyed with a SSL connection still active.\n");
+        iprintf("Error: TLS destroyed with a SSL connection still active.\n");
         break;
     case TLSIO_NETBURNER_STATE_CLOSED:
     case TLSIO_NETBURNER_STATE_ERROR:
@@ -151,6 +151,7 @@ void tlsioNetburnerDestroy(CONCRETE_IO_HANDLE concreteIo)
 
     tlsio_options_release_resources(&tlsioInstance->options);
     free(tlsioInstance);
+    tlsioInstance = NULL;
 }
 
 int tlsioNetburnerOpen(
@@ -174,15 +175,6 @@ int tlsioNetburnerOpen(
         return result;
     }
 
-    // Hook up instance to the SDK's operating environment.
-    tlsioInstance->onIoOpenComplete = onIoOpenComplete;
-    tlsioInstance->onIoOpenCompleteContext = onIoOpenCompleteContext;
-    tlsioInstance->onBytesReceived = onBytesReceived;
-    tlsioInstance->onBytesReceivedContext = onBytesReceivedContext;
-    tlsioInstance->onIoError = onIoError;
-    tlsioInstance->onIoErrorContext = onIoErrorContext;
-
-
     iprintf("Opening an SSL socket with state: %d\r\n", tlsioInstance->state);
 
     // Check to see if
@@ -198,11 +190,20 @@ int tlsioNetburnerOpen(
         break;
     case TLSIO_NETBURNER_STATE_CLOSED: // Being the "0" value, this the default value for newly created instances.
     	iprintf("Connecting to %I on port %d\r\n", tlsioInstance->remoteAddr, tlsioInstance->remotePort );
-        tlsioInstance->fds = SSL_connect(tlsioInstance->remoteAddr, 0, tlsioInstance->remotePort, 10000, tlsioInstance->remoteHost, false, true);
+        tlsioInstance->state = TLSIO_NETBURNER_STATE_OPENING;
+        tlsioInstance->fds = SSL_connect(tlsioInstance->remoteAddr, tlsioInstance->remotePort, 10000, tlsioInstance->remoteHost, false, true);
         iprintf("Result: %d\r\n", tlsioInstance->fds );
         if (tlsioInstance->fds > 0)
         {
-            tlsioInstance->state = TLSIO_NETBURNER_STATE_OPENING;
+            // Hook up instance to the SDK's operating environment.
+            tlsioInstance->onIoOpenComplete = onIoOpenComplete;
+            tlsioInstance->onIoOpenCompleteContext = onIoOpenCompleteContext;
+            tlsioInstance->onBytesReceived = onBytesReceived;
+            tlsioInstance->onBytesReceivedContext = onBytesReceivedContext;
+            tlsioInstance->onIoError = onIoError;
+            tlsioInstance->onIoErrorContext = onIoErrorContext;
+
+            tlsioInstance->state = TLSIO_NETBURNER_STATE_OPEN; //WB TLSIO_NETBURNER_STATE_OPENING;
             result = 0;
         }
         else
@@ -222,24 +223,29 @@ int tlsioNetburnerOpen(
     iprintf("Result of opening: %d\n", result);
     if (result != 0)
     {
-        iprintf("Result is not 0\n");
         if (onIoOpenComplete != NULL)
         {
-            iprintf("onOpenComplete (but is an error)\n");
+            iprintf("onOpenComplete: error\n");
             (void)onIoOpenComplete(onIoOpenCompleteContext, IO_OPEN_ERROR);
         }
 
+        /* //WB
         if (onIoError != NULL)
         {
             (void)onIoError(onIoErrorContext);
-        }
+        }*/
     }
     else
     {
         // I think this should not be called immediately if the connection is really open right away. I think the
         //  Arduino library must return false the first time it is called, otherwise the transport_data->mqttClientStatus
         //  in InitializeConnection gets set to CONNECTING after it is set CONNECTED. Race condition in Arduino.
-        tlsioNetburnerDowork(concreteIo);
+        //tlsioNetburnerDowork(concreteIo); //WB
+    	if (onIoOpenComplete != NULL)
+		{
+			iprintf("onOpenComplete: OK\n");
+			(void)onIoOpenComplete(onIoOpenCompleteContext, IO_OPEN_OK);
+		}
     }
     return result;
 }
@@ -249,7 +255,8 @@ int tlsioNetburnerClose(
         ON_IO_CLOSE_COMPLETE onIoCloseComplete,
         void* onIoCloseCompleteContext)
 {
-    int result;
+
+			int result;
     NetBurnerTLS * tlsioInstance = (NetBurnerTLS*)concreteIo;
 
     if (concreteIo == NULL)
@@ -276,15 +283,21 @@ int tlsioNetburnerClose(
         result = __FAILURE__;
         break;
     case TLSIO_NETBURNER_STATE_OPEN:
+    	tlsioInstance->state = TLSIO_NETBURNER_STATE_CLOSING;
         close(tlsioInstance->fds);
         tlsioInstance->state = TLSIO_NETBURNER_STATE_CLOSED;
         result = 0;
-        tlsioNetburnerDowork(concreteIo);
+        //tlsioNetburnerDowork(concreteIo); //WB
         break;
     default:
         // The state defined as NULL in the original source code has undefined behavior, and that state is never used.
         result = __FAILURE__;
         break;
+    }
+
+	tlsioInstance->state = TLSIO_NETBURNER_STATE_CLOSED;
+    if (result == 0 && onIoCloseComplete != NULL) {
+    	onIoCloseComplete(onIoCloseCompleteContext);
     }
 
     return result;
@@ -315,12 +328,12 @@ int tlsioNetburnerSend(
         size_t sendResult;
         size_t sendSize = size;
         const char * runBuffer = (const char *)buffer;
-        iprintf("Write Bytes: %d to %d", size, tlsioInstance->fds);
+        /*iprintf("Write Bytes: %d to %d", size, tlsioInstance->fds);
         for(int i = 0; i < size; i++) {
             if (i % 20 == 0) iprintf("\n\t");
             iprintf(" %02x", runBuffer[i]);
         }
-        iprintf("\n\n");
+        iprintf("\n\n");*/
         result = __FAILURE__;
         while (sendSize > 0)
         {
@@ -376,9 +389,11 @@ void tlsioNetburnerDowork(CONCRETE_IO_HANDLE concreteIo)
     int received;
     NetBurnerTLS * tlsioInstance = (NetBurnerTLS*)concreteIo;
     char RecvBuffer[RECEIVE_BUFFER_SIZE];
+    static uint16_t discoCount = 0;
 
-    // With the deprecation of OPENING and CLOSING in this implementation, this block really only serves to filter calls
-    //   to the dowork function that happen at other times in the lifecycle.
+    // With the lessening of OPENING and CLOSING in this implementation,
+    // this block really only serves to filter accidental calls
+    // to the dowork function that happen at other times in the lifecycle.
     iprintf("State: %d\n", tlsioInstance->state);
     switch (tlsioInstance->state)
     {
@@ -414,10 +429,12 @@ void tlsioNetburnerDowork(CONCRETE_IO_HANDLE concreteIo)
         }
         break;
     case TLSIO_NETBURNER_STATE_OPENING:
+        /* //WB
         tlsioInstance->state = TLSIO_NETBURNER_STATE_OPEN;
         if (tlsioInstance->onIoOpenComplete != NULL) {
             tlsioInstance->onIoOpenComplete(tlsioInstance->onIoOpenCompleteContext, IO_OPEN_OK);
         }
+        */
         break;
     case TLSIO_NETBURNER_STATE_CLOSING:
     case TLSIO_NETBURNER_STATE_CLOSED:
