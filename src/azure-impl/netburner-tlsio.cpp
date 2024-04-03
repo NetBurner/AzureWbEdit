@@ -191,7 +191,7 @@ int tlsioNetburnerOpen(
     case TLSIO_NETBURNER_STATE_CLOSED: // Being the "0" value, this the default value for newly created instances.
     	iprintf("Connecting to %I on port %d\r\n", tlsioInstance->remoteAddr, tlsioInstance->remotePort );
         tlsioInstance->state = TLSIO_NETBURNER_STATE_OPENING;
-        tlsioInstance->fds = SSL_connect(tlsioInstance->remoteAddr, tlsioInstance->remotePort, 10000, tlsioInstance->remoteHost, false, true);
+        tlsioInstance->fds = SSL_connect(tlsioInstance->remoteAddr, 0, tlsioInstance->remotePort, 10000, tlsioInstance->remoteHost, false, true);
         iprintf("Result: %d\r\n", tlsioInstance->fds );
         if (tlsioInstance->fds > 0)
         {

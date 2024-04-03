@@ -30,14 +30,15 @@ void UserMain(void * pd)
     //StartHttp();
 
     IPADDR ntpServer;
-    int dnsSuccess = GetHostByName("0.pool.ntp.org", &ntpServer, INADDR_ANY, TICKS_PER_SECOND * 5);
-    if(dnsSuccess != 0 || !SetNTPTime(ntpServer))
+    while(GetHostByName("0.pool.ntp.org", &ntpServer, INADDR_ANY, TICKS_PER_SECOND * 5) != 0)
     {
-        iprintf("Failed to set time.\n");
-        while(1)
-         {
-            OSTimeDly(TICKS_PER_SECOND);
-        }
+        iprintf("Failed to get NTP DNS.\n");
+        OSTimeDly(TICKS_PER_SECOND*5);
+    }
+    while(!SetNTPTime(ntpServer))
+    {
+        iprintf("Failed to set time via NTP.\n");
+        OSTimeDly(TICKS_PER_SECOND*5);
     }
 
     iprintf("Application %s started\n",AppName );
@@ -53,11 +54,11 @@ void UserMain(void * pd)
     while (1)
     {
     	IoTHubClient_LL_DoWork(iotHubClientHandle);
-        if((count++ % 5) == 0)
+        if((count++ % 6) == 0)
         {
         	iprintf("Posting record data for id: %d\r\n", count);
             PostRecordData();
         }
-        OSTimeDly(TICKS_PER_SECOND);
+        OSTimeDly(TICKS_PER_SECOND*5);
     }
 }

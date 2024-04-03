@@ -38,8 +38,8 @@ typedef struct EVENT_INSTANCE_TAG
     size_t messageTrackingId;
 } EVENT_INSTANCE;
 
-const char connectionString[] = "HostName=<REPLACE WITH YOUR STRING>"; // Make sure to replace this with your specific connection string
 
+const char connectionString[] = "HostName=<REPLACE WITH YOUR STRING>"; // Make sure to replace this with your specific connection string
 
 static int DeviceMethodCallback(const char* method_name, const unsigned char* payload, size_t size, unsigned char** response, size_t* response_size, void* userContextCallback)
 {
@@ -141,10 +141,24 @@ static void iothub_connection_status(IOTHUB_CLIENT_CONNECTION_STATUS result, IOT
 }
 
 
-static IOTHUBMESSAGE_DISPOSITION_RESULT ReceiveMessageCallback(IOTHUB_MESSAGE_HANDLE message, void *userContextCallback)
+static IOTHUBMESSAGE_DISPOSITION_RESULT ReceiveMessageCallback(IOTHUB_MESSAGE_HANDLE message, void* userContextCallback)
 {
+    int* callbackInvoked = (int*)userContextCallback;
+    const unsigned char* payload;
+    size_t size;
+    if (IoTHubMessage_GetByteArray(message,&payload,&size) == IOTHUB_MESSAGE_OK)
+    {
+        (void)printf("Received message [%d] with Data: <<<%.*s>>> & Size=%d\r\n", *callbackInvoked, (int)size, payload, (int)size);
+        /* Some device specific action code goes here... */
+    }
+    else
+    {
+        (void)printf("Received message [%d] with bad data\r\n",*callbackInvoked);
+    }
+    (*callbackInvoked)++;
     return IOTHUBMESSAGE_ACCEPTED;
 }
+
 
 bool InitializeAzureSDK()
 {
@@ -169,8 +183,8 @@ bool InitializeAzureSDK()
     bool traceOn = true;
     IoTHubClient_LL_SetOption(iotHubClientHandle, OPTION_LOG_TRACE, &traceOn);
 
-    int deviceMethodContext = 0;
-    if (IoTHubClient_LL_SetDeviceMethodCallback(iotHubClientHandle, DeviceMethodCallback, &deviceMethodContext) != IOTHUB_CLIENT_OK)
+    int userContextCallback = 0;
+    if (IoTHubClient_LL_SetDeviceMethodCallback(iotHubClientHandle, DeviceMethodCallback, &userContextCallback) != IOTHUB_CLIENT_OK)
     {
         iprintf("ERROR: IoTHubClient_LL_SetDeviceMethodCallback...FAILED!\n");
         return false;
@@ -178,6 +192,12 @@ bool InitializeAzureSDK()
     else
     {
     	iprintf("IoT HubClient Method Callback Setting Successful.\r\n");
+    }
+
+    if(IoTHubClient_LL_SetMessageCallback(iotHubClientHandle, ReceiveMessageCallback, &userContextCallback) != IOTHUB_CLIENT_OK)
+    {
+        iprintf("ERROR: IoTHubClient_LL_SetMessageCallback...FAILED!\n");
+        return false;
     }
 
     return true;
